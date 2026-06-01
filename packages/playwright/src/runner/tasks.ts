@@ -23,8 +23,8 @@ import { ManualPromise } from '@isomorphic/manualPromise';
 import { monotonicTime } from '@isomorphic/time';
 import { removeFolders } from '@utils/fileUtils';
 
-import { Dispatcher  } from './dispatcher';
-import { collectProjectsAndTestFiles, createRootSuite, loadFileSuites, loadGlobalHook, loadTestList } from './loadUtils';
+import { Dispatcher } from './dispatcher';
+import { collectProjectsAndTestFiles, createRootSuite, createStructuredTestSelectionFilters, loadFileSuites, loadGlobalHook, loadTestList } from './loadUtils';
 import { buildDependentProjects, buildTeardownToSetupsMap, filterProjects } from './projectUtils';
 import { applySuggestedRebaselines, clearSuggestedRebaselines } from './rebase';
 import { TaskRunner } from './taskRunner';
@@ -35,12 +35,15 @@ import { createTitleMatcher, forceRegExp, removeDirAndLogToConsole } from '../ut
 
 import type { TestGroup } from '../runner/testGroups';
 import type { EnvByProjectId } from './dispatcher';
+import type { StructuredTestSelection } from './loadUtils';
+import type { WorkerHost } from './workerHost';
 import type { TestRunnerPluginRegistration } from '../plugins';
 import type { Task } from './taskRunner';
 import type { ReporterDescription } from '../../types/test';
 import type { FullResult, TestError } from '../../types/testReporter';
 import type { Matcher, TestCaseFilter } from '../util';
 import type { InternalReporter } from '../reporters/internalReporter';
+import type { AnyReporter } from '../reporters/reporterV2';
 
 const readDirAsync = promisify(fs.readdir);
 
@@ -66,13 +69,18 @@ export type TestRunOptions = {
   lastFailed?: boolean;
   testList?: string;
   testListInvert?: string;
+  testSelection?: StructuredTestSelection;
   lastFailedTestIds?: string[];
   pauseOnError?: boolean;
   pauseAtEnd?: boolean;
   onTestPaused?: (params: TestPausedParams) => void;
   preserveOutputDir?: boolean;
   additionalReporters?: ReporterDescription[];
+  additionalReporterObjects?: AnyReporter[];
+  disableConfigReporters?: boolean;
   shardWeights?: number[];
+  preforkedWorkers?: WorkerHost[];
+  workerEnv?: Record<string, string | undefined>;
 };
 
 export type TestPausedParams = {
@@ -301,10 +309,18 @@ export function createLoadTask(mode: 'out-of-process' | 'in-process', options: {
   return {
     title: 'load tests',
     setup: async (testRun, errors, softErrors) => {
+      let unmatchedSelectionErrors: (() => TestError[]) | undefined;
       if (testRun.options.locations?.length) {
         const { testFilter, fileFilter } = suiteUtils.createFiltersFromArguments(testRun.options.locations);
         testRun.loadFileFilters.push(fileFilter);
         testRun.preOnlyTestFilters.push(testFilter);
+      }
+
+      if (testRun.options.testSelection) {
+        const { testFilter, fileFilter, unmatchedErrors } = createStructuredTestSelectionFilters(testRun.config, testRun.options.testSelection);
+        testRun.preOnlyTestFilters.push(testFilter);
+        testRun.loadFileFilters.push(fileFilter);
+        unmatchedSelectionErrors = unmatchedErrors;
       }
 
       if (testRun.options.testList) {
@@ -350,11 +366,13 @@ export function createLoadTask(mode: 'out-of-process' | 'in-process', options: {
       }
 
       await createRootSuite(testRun, options.failOnLoadErrors ? errors : softErrors, !!options.filterOnly);
+      if (unmatchedSelectionErrors)
+        (options.failOnLoadErrors ? errors : softErrors).push(...unmatchedSelectionErrors());
       // Fail when no tests.
       if (options.failOnLoadErrors && !testRun.rootSuite?.allTests().length
           && !testRun.options.passWithNoTests
           && !testRun.config.config.shard && !testRun.options.onlyChanged
-          && !testRun.options.testList && !testRun.options.testListInvert) {
+          && !testRun.options.testList && !testRun.options.testListInvert && !testRun.options.testSelection) {
         if (testRun.options.locations?.length) {
           throw new Error([
             `No tests found.`,
@@ -414,7 +432,7 @@ function createPhasesTask(): Task<TestRun> {
           processed.add(project);
         if (phaseProjects.length) {
           let testGroupsInPhase = 0;
-          const phase: Phase = { dispatcher: new Dispatcher(testRun), projects: [] };
+          const phase: Phase = { dispatcher: new Dispatcher(testRun, testRun.options.preforkedWorkers), projects: [] };
           testRun.phases.push(phase);
           for (const project of phaseProjects) {
             const projectSuite = projectToSuite.get(project)!;

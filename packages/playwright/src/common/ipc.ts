@@ -65,6 +65,7 @@ export type WorkerInitParams = {
   projectId: string;
   config: SerializedConfig;
   artifactsDir: string;
+  extraEnv?: Record<string, string | undefined>;
   pauseOnError: boolean;
   pauseAtEnd: boolean;
 };

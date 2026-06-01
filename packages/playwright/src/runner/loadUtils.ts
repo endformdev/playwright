@@ -32,6 +32,22 @@ import type { TestGroup } from './testGroups';
 import type { FullConfig, Reporter, TestError } from '../../types/testReporter';
 import type { Matcher, TestCaseFilter } from '../util';
 
+export type StructuredTestSelection = {
+  tests: StructuredSelectedTest[];
+};
+
+export type StructuredSelectedTest = {
+  projectName?: string;
+  file: string;
+  titlePath?: string[];
+};
+
+type TestDescription = {
+  project?: string;
+  file: string;
+  titlePath: string[];
+};
+
 
 export async function collectProjectsAndTestFiles(testRun: TestRun, doNotRunTestsOutsideProjectFilter: boolean) {
   const fsCache = new Map();
@@ -347,22 +363,67 @@ export async function loadTestList(config: FullConfigInternal, filePath: string)
       }
       return { project, file: toPosixPath(parseLocationArg(tokens[0]).file), titlePath: tokens.slice(1) };
     });
-    const testFilter = (test: testNs.TestCase) => descriptions.some(d => {
-      // Note: there is no root yet at the time of filtering.
-      const [projectName, , ...titles] = test.titlePath();
-      if (d.project !== undefined && d.project !== projectName)
-        return false;
-      const relativeFile = toPosixPath(path.relative(config.config.rootDir, test.location.file));
-      if (relativeFile !== d.file)
-        return false;
-      return d.titlePath.length <= titles.length && d.titlePath.every((_, index) => titles[index] === d.titlePath[index]);
-    });
-    const fileFilter = (file: string) => {
-      const relativeFile = toPosixPath(path.relative(config.config.rootDir, file));
-      return descriptions.some(d => d.file === relativeFile);
-    };
-    return { testFilter, fileFilter };
+    return createFilters(config, descriptions).filters;
   } catch (e) {
     throw errorWithFile(filePath, 'Cannot read test list file: ' + e.message);
   }
+}
+
+export function createStructuredTestSelectionFilters(config: FullConfigInternal, selection: StructuredTestSelection): { testFilter: TestCaseFilter, fileFilter: Matcher, unmatchedErrors: () => TestError[] } {
+  const descriptions = selection.tests.map(test => ({
+    project: test.projectName,
+    file: normalizeSelectedFile(config, test.file),
+    titlePath: test.titlePath || [],
+  }));
+  const { filters, unmatchedErrors } = createFilters(config, descriptions);
+  return { ...filters, unmatchedErrors };
+}
+
+function createFilters(config: FullConfigInternal, descriptions: TestDescription[]): { filters: { testFilter: TestCaseFilter, fileFilter: Matcher }, unmatchedErrors: () => TestError[] } {
+  const matched = new Array(descriptions.length).fill(false);
+  const testFilter = (test: testNs.TestCase) => descriptions.some((d, index) => {
+    // Note: there is no root yet at the time of filtering.
+    const [projectName, , ...titles] = test.titlePath();
+    if (d.project !== undefined && d.project !== projectName)
+      return false;
+    if (!matchesSelectedFile(config, test.location.file, d.file))
+      return false;
+    const result = d.titlePath.length <= titles.length && d.titlePath.every((_, index) => titles[index] === d.titlePath[index]);
+    matched[index] ||= result;
+    return result;
+  });
+  const fileFilter = (file: string) => {
+    return descriptions.some(d => matchesSelectedFile(config, file, d.file));
+  };
+  const unmatchedErrors = () => descriptions.filter((_, index) => !matched[index]).map(d => ({ message: `Error: selected test not found: ${formatTestDescription(d)}` }));
+  return { filters: { testFilter, fileFilter }, unmatchedErrors };
+}
+
+function normalizeSelectedFile(config: FullConfigInternal, file: string): string {
+  if (path.isAbsolute(file))
+    return toPosixPath(path.relative(config.config.rootDir, file));
+  return toPosixPath(parseLocationArg(file).file);
+}
+
+function matchesSelectedFile(config: FullConfigInternal, file: string, selectedFile: string): boolean {
+  const relativeFile = toPosixPath(path.relative(config.config.rootDir, file));
+  if (relativeFile === selectedFile)
+    return true;
+  const absoluteFile = path.resolve(file);
+  const absoluteSelectedFile = path.resolve(config.config.rootDir, selectedFile);
+  return toPosixPath(absoluteFile) === toPosixPath(absoluteSelectedFile) || toPosixPath(realpath(absoluteFile)) === toPosixPath(realpath(absoluteSelectedFile));
+}
+
+function realpath(file: string): string {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+
+function formatTestDescription(description: TestDescription): string {
+  const tokens = [description.file, ...description.titlePath];
+  const prefix = description.project === undefined ? '' : `[${description.project}] › `;
+  return prefix + tokens.join(' › ');
 }

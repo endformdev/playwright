@@ -19,6 +19,12 @@
       "default": "./index.js"
     },
     "./package.json": "./package.json",
+    "./programmatic-runner": {
+      "types": "./programmatic-runner.d.ts",
+      "import": "./programmatic-runner.mjs",
+      "require": "./programmatic-runner.js",
+      "default": "./programmatic-runner.js"
+    },
     "./lib/common": "./lib/common/index.js",
     "./lib/fsWatcher": "./lib/fsWatcher.js",
     "./lib/mcp/index": "./lib/mcp/index.js",

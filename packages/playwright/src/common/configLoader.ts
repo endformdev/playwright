@@ -93,7 +93,8 @@ export async function deserializeConfig(data: SerializedConfig): Promise<FullCon
   return await loadConfig(data.location, data.configCLIOverrides, undefined, data.metadata ? JSON.parse(data.metadata) : undefined);
 }
 
-async function loadUserConfig(location: ConfigLocation): Promise<Config> {
+export async function loadUserConfig(location: ConfigLocation, overrides?: ConfigCLIOverrides): Promise<Config> {
+  await setSingleTSConfig(overrides?.tsconfig);
   let object = location.resolvedConfigFile ? await requireOrImport(location.resolvedConfigFile) : {};
   if (object && typeof object === 'object' && ('default' in object))
     object = object['default'];
@@ -115,6 +116,10 @@ export async function loadConfig(location: ConfigLocation, overrides?: ConfigCLI
 
   // 2. Load and validate playwright config.
   const userConfig = await loadUserConfig(location);
+  return await loadConfigFromObject(location, userConfig, overrides, ignoreProjectDependencies, metadata);
+}
+
+export async function loadConfigFromObject(location: ConfigLocation, userConfig: Config, overrides?: ConfigCLIOverrides, ignoreProjectDependencies = false, metadata?: Config['metadata']): Promise<FullConfigInternal> {
   validateConfig(location.resolvedConfigFile || '<default config>', userConfig);
   const fullConfig = new FullConfigInternal(location, userConfig, overrides || {}, metadata);
   fullConfig.defineConfigWasUsed = !!(userConfig as any)[kDefineConfigWasUsed];
