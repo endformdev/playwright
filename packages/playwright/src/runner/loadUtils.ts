@@ -37,9 +37,9 @@ export type StructuredTestSelection = {
 };
 
 export type StructuredSelectedTest = {
-  projectName?: string;
+  projectName: string;
   file: string;
-  titlePath?: string[];
+  titlePath: string[];
 };
 
 type TestDescription = {
@@ -373,7 +373,7 @@ export function createStructuredTestSelectionFilters(config: FullConfigInternal,
   const descriptions = selection.tests.map(test => ({
     project: test.projectName,
     file: normalizeSelectedFile(config, test.file),
-    titlePath: test.titlePath || [],
+    titlePath: test.titlePath,
   }));
   const { filters, unmatchedErrors } = createFilters(config, descriptions);
   return { ...filters, unmatchedErrors };

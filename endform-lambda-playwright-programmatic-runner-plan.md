@@ -68,18 +68,10 @@ These should become structured parameters to `runTests`:
 await runTests({
   config,
   configLocation,
-  configOverrides: {
-    retries: 0,
-    workers: 1,
-    maxFailures: 0,
-    timeout,
-    updateSnapshots,
-  },
   ignoreProjectDependencies: true,
   testSelection,
   workerEnv,
   preforkedWorkers,
-  reporter,
 });
 ```
 
@@ -131,10 +123,10 @@ config.reporter = buildEndformReporterList(config.reporter, request);
 await runTests({
   configLocation,
   config,
-  configOverrides,
+  ignoreProjectDependencies: true,
   testSelection,
-  reporter,
   preforkedWorkers,
+  workerEnv,
 });
 ```
 
@@ -222,25 +214,18 @@ The run parameters should use Playwright concepts and avoid Endform-specific nam
 type RunTestsParams = {
   configLocation: ConfigLocation;
   config: Config;
-  configOverrides?: ConfigCLIOverrides;
-  ignoreProjectDependencies?: boolean;
-  projectFilter?: string[];
-  testSelection?: StructuredTestSelection;
-  reporter?: Reporter | Reporter[];
-  disableConfigReporters?: boolean;
-  preforkedWorkers?: PreforkedWorkers;
-  workerEnv?: Record<string, string | undefined>;
-  metadata?: Record<string, unknown>;
+  ignoreProjectDependencies: boolean;
+  testSelection: StructuredTestSelection;
+  preforkedWorkers: PreforkedWorkers;
+  workerEnv: Record<string, string | undefined>;
 };
 ```
 
 Notes:
 
-- `config` is the raw user config object, possibly mutated by the caller before `runTests` receives it.
-- `configOverrides` should map to the existing `ConfigCLIOverrides` structure where possible.
+- `config` is the raw user config object, possibly mutated by the caller before `runTests` receives it, and is the single source of truth for normal Playwright configuration such as workers, retries, timeouts, snapshot policy, metadata, and reporters.
 - `ignoreProjectDependencies` is the programmatic equivalent of `--no-deps`.
-- `reporter` should allow the caller to provide additional in-process reporters without requiring them to exist in `config.reporter`.
-- `disableConfigReporters` is useful for tests, but Endform will usually build the desired config reporter list itself and pass it in `config.reporter`.
+- Reporters are owned by the caller through the mutated `config.reporter`; the programmatic runner should not expose a parallel reporter assembly path.
 - `preforkedWorkers` should be an opaque handle, not an array of internal `WorkerHost` instances.
 
 ## Structured Test Selection
@@ -255,7 +240,7 @@ type StructuredTestSelection = {
 };
 
 type StructuredSelectedTest = {
-  projectName?: string;
+  projectName: string;
   file: string;
   titlePath: string[];
 };
@@ -314,6 +299,8 @@ await runTests({
   config,
   preforkedWorkers,
   testSelection,
+  workerEnv,
+  ignoreProjectDependencies: true,
 });
 ```
 

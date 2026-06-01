@@ -94,7 +94,8 @@ function assert(condition, message) {
 }
 
 class SmokeReporter {
-  constructor() {
+  constructor(options) {
+    this.eventsFile = options.eventsFile;
     this.events = [];
     this.stdoutWithTest = false;
     this.stderrWithTest = false;
@@ -161,6 +162,17 @@ class SmokeReporter {
 
   onExit() {
     this.events.push('onExit');
+    fs.writeFileSync(this.eventsFile, JSON.stringify({
+      events: this.events,
+      configMetadata: this.configMetadata,
+      finalStatus: this.finalStatus,
+      testCount: this.testCount,
+      testTitle: this.testTitle,
+      stdoutWithTest: this.stdoutWithTest,
+      stderrWithTest: this.stderrWithTest,
+      attachments: this.attachments,
+      errors: this.errors || [],
+    }));
   }
 }
 
@@ -171,11 +183,14 @@ async function main() {
   assert(typeof esmRunner.runTests === 'function', 'Expected ESM entry to export runTests');
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pw-programmatic-runner-smoke-'));
   const configFile = path.join(tmpDir, 'playwright.config.js');
+  const reporterFile = path.join(tmpDir, 'smoke-reporter.js');
+  const eventsFile = path.join(tmpDir, 'smoke-events.json');
   const testFile = path.join(tmpDir, 'programmatic-smoke.spec.js');
   const testEntry = playwrightTestEntry(playwrightRoot);
   const preforkedWorkers = await runner.createPreforkedWorkers({ workers: 1 });
 
   await writeFile(path.join(tmpDir, 'node_modules', '@playwright', 'test', 'index.js'), `module.exports = require(${JSON.stringify(testEntry)});\n`);
+  await writeFile(reporterFile, `const fs = require('fs');\nmodule.exports = ${SmokeReporter.toString()};\n`);
   await writeFile(configFile, `
 module.exports = {
   testDir: ${JSON.stringify(tmpDir)},
@@ -208,20 +223,18 @@ test('not selected', async () => {
   try {
     const config = await runner.loadUserConfig(configFile);
     config.workers = 1;
-    config.reporter = 'null';
+    config.reporter = [[reporterFile, { eventsFile }]];
     config.metadata = { fromMutatedConfig: true };
 
-    const reporter = new SmokeReporter();
     const result = await runner.runTests({
       configLocation: configFile,
       config,
-      configOverrides: { workers: 1, retries: 0 },
-      testSelection: { tests: [{ file: testFile, titlePath: ['programmatic smoke'] }] },
-      reporter,
-      disableConfigReporters: true,
+      ignoreProjectDependencies: true,
+      testSelection: { tests: [{ projectName: '', file: testFile, titlePath: ['programmatic smoke'] }] },
       preforkedWorkers,
       workerEnv: { ENDFORM_LATE_ENV: 'from-init' },
     });
+    const reporter = JSON.parse(await fs.promises.readFile(eventsFile, 'utf-8'));
 
     assert(result.status === 'passed', `Expected run status passed, got ${result.status}. Test count: ${reporter.testCount}. Events: ${reporter.events.join(', ')}. Errors: ${JSON.stringify(reporter.errors || [])}`);
     assert(reporter.finalStatus === 'passed', `Expected reporter final status passed, got ${reporter.finalStatus}`);
