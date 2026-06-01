@@ -14,32 +14,12 @@
  * limitations under the License.
  */
 
-import type { Config, FullConfig, ReporterDescription, TestProject } from './types/test';
-import type { FullResult, Reporter } from './types/testReporter';
+import type { Config } from './types/test';
+import type { FullResult } from './types/testReporter';
 
 export type ConfigLocation = string | {
   resolvedConfigFile?: string;
   configDir: string;
-};
-
-export type ProgrammaticConfigOverrides = {
-  forbidOnly?: boolean;
-  fullyParallel?: boolean;
-  globalTimeout?: number;
-  maxFailures?: number;
-  outputDir?: string;
-  quiet?: boolean;
-  repeatEach?: number;
-  reporter?: ReporterDescription[];
-  retries?: number;
-  shard?: FullConfig['shard'];
-  timeout?: number;
-  tsconfig?: string;
-  updateSnapshots?: 'all' | 'changed' | 'missing' | 'none';
-  updateSourceMethod?: 'overwrite' | 'patch' | '3way';
-  use?: TestProject['use'];
-  workers?: number | string;
-  metadata?: Config['metadata'];
 };
 
 export type StructuredTestSelection = {
@@ -47,29 +27,22 @@ export type StructuredTestSelection = {
 };
 
 export type StructuredSelectedTest = {
-  projectName?: string;
+  projectName: string;
   file: string;
-  titlePath?: string[];
+  titlePath: string[];
 };
 
-export type PreforkedWorkers = unknown;
+export type PreforkedWorkers = {
+  readonly __brand: unique symbol;
+};
 
 export type RunTestsParams = {
   configLocation: ConfigLocation;
-  config?: Config;
-  configOverrides?: ProgrammaticConfigOverrides;
-  ignoreProjectDependencies?: boolean;
-  projectFilter?: string[];
-  locations?: string[];
-  grep?: string;
-  grepInvert?: string;
-  testSelection?: StructuredTestSelection;
-  reporter?: Reporter | Reporter[];
-  disableConfigReporters?: boolean;
-  preforkedWorkers?: PreforkedWorkers;
-  workerEnv?: Record<string, string | undefined>;
-  metadata?: Config['metadata'];
-  passWithNoTests?: boolean;
+  config: Config;
+  ignoreProjectDependencies: boolean;
+  testSelection: StructuredTestSelection;
+  preforkedWorkers: PreforkedWorkers;
+  workerEnv: Record<string, string | undefined>;
 };
 
 export type RunTestsResult = {

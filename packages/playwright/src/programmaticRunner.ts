@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import { configLoader, ipc } from './common';
+import { configLoader } from './common';
 import { testRunner, workerHost } from './runner';
 
 import type { ConfigLocation } from './common';
 import type { StructuredTestSelection } from './runner/loadUtils';
-import type { AnyReporter } from './reporters/reporterV2';
 import type { Config } from '../types/test';
 import type { FullResult } from '../types/testReporter';
 
@@ -27,20 +26,11 @@ type ConfigLocationInput = string | ConfigLocation;
 
 type RunTestsParams = {
   configLocation: ConfigLocationInput;
-  config?: Config;
-  configOverrides?: ipc.ConfigCLIOverrides;
-  ignoreProjectDependencies?: boolean;
-  projectFilter?: string[];
-  locations?: string[];
-  grep?: string;
-  grepInvert?: string;
-  testSelection?: StructuredTestSelection;
-  reporter?: AnyReporter | AnyReporter[];
-  disableConfigReporters?: boolean;
-  preforkedWorkers?: PreforkedWorkers;
-  workerEnv?: Record<string, string | undefined>;
-  metadata?: Config['metadata'];
-  passWithNoTests?: boolean;
+  config: Config;
+  ignoreProjectDependencies: boolean;
+  testSelection: StructuredTestSelection;
+  preforkedWorkers: PreforkedWorkers;
+  workerEnv: Record<string, string | undefined>;
 };
 
 type RunTestsResult = {
@@ -61,23 +51,32 @@ export async function loadUserConfig(location: ConfigLocationInput): Promise<Con
 
 export async function runTests(params: RunTestsParams): Promise<RunTestsResult> {
   const location = resolveLocation(params.configLocation);
-  const userConfig = params.config || await configLoader.loadUserConfig(location, params.configOverrides);
-  const metadata = params.metadata ?? (params.configOverrides as any)?.metadata;
-  const config = await configLoader.loadConfigFromObject(location, userConfig, params.configOverrides, params.ignoreProjectDependencies, metadata);
-  const reporters = params.reporter ? Array.isArray(params.reporter) ? params.reporter : [params.reporter] : [];
+  const config = await configLoader.loadConfigFromObject(location, params.config, {}, params.ignoreProjectDependencies);
+  validateTestSelection(params.testSelection);
   const status = await testRunner.runAllTestsWithConfig(config, {
-    locations: params.locations,
-    grep: params.grep,
-    grepInvert: params.grepInvert,
-    projectFilter: params.projectFilter,
+    projectFilter: projectFilterFromSelection(params.testSelection),
     testSelection: params.testSelection,
-    passWithNoTests: params.passWithNoTests,
-    additionalReporterObjects: reporters,
-    disableConfigReporters: params.disableConfigReporters,
-    preforkedWorkers: params.preforkedWorkers?.workers,
+    preforkedWorkers: params.preforkedWorkers.workers,
     workerEnv: params.workerEnv,
   });
   return { status };
+}
+
+function validateTestSelection(selection: StructuredTestSelection) {
+  if (!selection || !selection.tests.length)
+    throw new Error('Programmatic runner requires at least one selected test');
+  for (const test of selection.tests) {
+    if (test.projectName === undefined)
+      throw new Error('Programmatic runner selected test must specify projectName');
+    if (!test.file)
+      throw new Error('Programmatic runner selected test must specify file');
+    if (!test.titlePath?.length)
+      throw new Error('Programmatic runner selected test must specify non-empty titlePath');
+  }
+}
+
+function projectFilterFromSelection(selection: StructuredTestSelection): string[] {
+  return [...new Set(selection.tests.map(test => test.projectName))];
 }
 
 export async function createPreforkedWorkers(params: { workers: number }): Promise<PreforkedWorkers> {
