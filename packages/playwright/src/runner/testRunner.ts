@@ -445,7 +445,7 @@ export async function runAllTestsWithConfig(config: FullConfigInternal, options:
   config.plugins.push(...webServerPluginsForConfig(config));
 
   const filteredProjects = filterProjects(config.projects, options.projectFilter);
-  const reporters = await createReporters(config, options.listMode ? 'list' : 'test', undefined, options);
+  const reporters = options.disableConfigReporters ? [] : await createReporters(config, options.listMode ? 'list' : 'test', undefined, options);
   const lastRun = new LastRunReporter(filteredProjects, options.listMode, options.lastFailedFile);
   if (options.lastFailed) {
     const lastFailedTestIds = await lastRun.filterLastFailed();
@@ -453,7 +453,7 @@ export async function runAllTestsWithConfig(config: FullConfigInternal, options:
       options = { ...options, lastFailedTestIds };
   }
 
-  const reporter = new InternalReporter([...reporters, lastRun]);
+  const reporter = new InternalReporter([...reporters, ...(options.additionalReporterObjects || []), lastRun]);
   const tasks = options.listMode ? [
     createLoadTask('in-process', { failOnLoadErrors: true, filterOnly: false }),
     createReportBeginTask(),
