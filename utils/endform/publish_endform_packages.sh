@@ -92,7 +92,11 @@ if [[ "${SKIP_SMOKE}" == "1" ]]; then
   STAGE_ARGS+=("--skip-smoke")
 fi
 
-node "${SCRIPT_DIR}/stage_endform_packages.js" "${STAGE_ARGS[@]}"
+if [[ ${#STAGE_ARGS[@]} -eq 0 ]]; then
+  node "${SCRIPT_DIR}/stage_endform_packages.js"
+else
+  node "${SCRIPT_DIR}/stage_endform_packages.js" "${STAGE_ARGS[@]}"
+fi
 
 CORE_TGZ="${OUT_DIR}/endform-playwright-core-${VERSION}.tgz"
 PLAYWRIGHT_TGZ="${OUT_DIR}/endform-playwright-${VERSION}.tgz"
