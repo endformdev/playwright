@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-import type { Config } from './types/test';
-import type { FullResult } from './types/testReporter';
+import type { Config } from "./types/test";
+import type { FullResult } from "./types/testReporter";
 
-export type ConfigLocation = string | {
-  resolvedConfigFile?: string;
-  configDir: string;
-};
+export type ConfigLocation =
+  | string
+  | {
+      resolvedConfigFile?: string;
+      configDir: string;
+    };
 
 export type StructuredTestSelection = {
   tests: StructuredSelectedTest[];
@@ -46,10 +48,14 @@ export type RunTestsParams = {
 };
 
 export type RunTestsResult = {
-  status: FullResult['status'];
+  status: FullResult["status"];
 };
 
 export function loadUserConfig(location: ConfigLocation): Promise<Config>;
 export function runTests(params: RunTestsParams): Promise<RunTestsResult>;
-export function createPreforkedWorkers(params: { workers: number }): Promise<PreforkedWorkers>;
-export function disposePreforkedWorkers(workers: PreforkedWorkers): Promise<void>;
+export function createPreforkedWorkers(params: {
+  workers: number;
+}): Promise<PreforkedWorkers>;
+export function disposePreforkedWorkers(
+  workers: PreforkedWorkers,
+): Promise<void>;

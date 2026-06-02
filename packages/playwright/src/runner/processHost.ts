@@ -68,6 +68,7 @@ export class ProcessHost extends EventEmitter {
         (options.onStdErr && !process.env.PW_RUNNER_DEBUG) ? 'pipe' : 'inherit',
         'ipc',
       ],
+      serialization: 'advanced',
     });
     this.process.on('exit', async (code, signal) => {
       this._processDidExit = true;

@@ -17,10 +17,12 @@
 import { configLoader } from './common';
 import { testRunner, workerHost } from './runner';
 
-import type { ConfigLocation } from './common';
-import type { StructuredTestSelection } from './runner/loadUtils';
 import type { Config } from '../types/test';
 import type { FullResult } from '../types/testReporter';
+import type { ConfigLocation } from './common';
+import type { FullConfigInternal } from './common/config';
+import type { ConfigCLIOverrides } from './common/ipc';
+import type { StructuredTestSelection } from './runner/loadUtils';
 
 type ConfigLocationInput = string | ConfigLocation;
 
@@ -45,13 +47,25 @@ export class PreforkedWorkers {
   }
 }
 
-export async function loadUserConfig(location: ConfigLocationInput): Promise<Config> {
+export async function loadUserConfig(
+  location: ConfigLocationInput,
+): Promise<Config> {
   return await configLoader.loadUserConfig(resolveLocation(location));
 }
 
-export async function runTests(params: RunTestsParams): Promise<RunTestsResult> {
+export async function runTests(
+  params: RunTestsParams,
+): Promise<RunTestsResult> {
   const location = resolveLocation(params.configLocation);
-  const config = await configLoader.loadConfigFromObject(location, params.config, {}, params.ignoreProjectDependencies);
+  await configLoader.prepareConfigLoading(location);
+  const config = await configLoader.loadConfigFromObject(
+      location,
+      params.config,
+      {},
+      params.ignoreProjectDependencies,
+  );
+  (config as any).__programmaticUserConfig = params.config;
+  applyWorkerConfigCLIOverrides(config);
   validateTestSelection(params.testSelection);
   const status = await testRunner.runAllTestsWithConfig(config, {
     projectFilter: projectFilterFromSelection(params.testSelection),
@@ -66,28 +80,41 @@ function validateTestSelection(selection: StructuredTestSelection) {
   if (!selection || !selection.tests.length)
     throw new Error('Programmatic runner requires at least one selected test');
   for (const test of selection.tests) {
-    if (test.projectName === undefined)
-      throw new Error('Programmatic runner selected test must specify projectName');
+    if (test.projectName === undefined) {
+      throw new Error(
+          'Programmatic runner selected test must specify projectName',
+      );
+    }
     if (!test.file)
       throw new Error('Programmatic runner selected test must specify file');
-    if (!test.titlePath?.length)
-      throw new Error('Programmatic runner selected test must specify non-empty titlePath');
+    if (!test.titlePath?.length) {
+      throw new Error(
+          'Programmatic runner selected test must specify non-empty titlePath',
+      );
+    }
   }
 }
 
-function projectFilterFromSelection(selection: StructuredTestSelection): string[] {
+function projectFilterFromSelection(
+  selection: StructuredTestSelection,
+): string[] {
   return [...new Set(selection.tests.map(test => test.projectName))];
 }
 
-export async function createPreforkedWorkers(params: { workers: number }): Promise<PreforkedWorkers> {
+export async function createPreforkedWorkers(params: {
+  workers: number;
+}): Promise<PreforkedWorkers> {
   const workers: workerHost.WorkerHost[] = [];
   try {
     for (let i = 0; i < params.workers; i++) {
       const worker = new workerHost.WorkerHost(i);
       workers.push(worker);
       const error = await worker.prefork();
-      if (error)
-        throw new Error(`Worker process exited before it was ready (code=${error.code}, signal=${error.signal})`);
+      if (error) {
+        throw new Error(
+            `Worker process exited before it was ready (code=${error.code}, signal=${error.signal})`,
+        );
+      }
     }
   } catch (e) {
     await Promise.all(workers.map(worker => worker.stop().catch(() => {})));
@@ -96,12 +123,71 @@ export async function createPreforkedWorkers(params: { workers: number }): Promi
   return new PreforkedWorkers(workers);
 }
 
-export async function disposePreforkedWorkers(workers: PreforkedWorkers): Promise<void> {
-  await Promise.all(workers.workers.map(worker => worker.stop().catch(() => {})));
+export async function disposePreforkedWorkers(
+  workers: PreforkedWorkers,
+): Promise<void> {
+  await Promise.all(
+      workers.workers.map(worker => worker.stop().catch(() => {})),
+  );
 }
 
 function resolveLocation(location: ConfigLocationInput): ConfigLocation {
   if (typeof location === 'string')
     return configLoader.resolveConfigLocation(location);
   return location;
+}
+
+function applyWorkerConfigCLIOverrides(config: FullConfigInternal) {
+  const overrides: ConfigCLIOverrides = {
+    ...config.configCLIOverrides,
+    failOnFlakyTests: config.failOnFlakyTests,
+    forbidOnly: config.config.forbidOnly,
+    fullyParallel: config.config.fullyParallel,
+    globalTimeout: config.config.globalTimeout,
+    reporter: config.config.reporter,
+    quiet: config.config.quiet,
+    workers: config.config.workers,
+    maxFailures: config.config.maxFailures,
+    shard: config.config.shard || undefined,
+    updateSnapshots: config.config.updateSnapshots,
+    updateSourceMethod: config.config.updateSourceMethod,
+  };
+
+  const ignoreSnapshots = commonProjectValue(config, 'ignoreSnapshots');
+  if (ignoreSnapshots !== undefined)
+    overrides.ignoreSnapshots = ignoreSnapshots;
+  const repeatEach = commonProjectValue(config, 'repeatEach');
+  if (repeatEach !== undefined)
+    overrides.repeatEach = repeatEach;
+  const timeout = commonProjectValue(config, 'timeout');
+  if (timeout !== undefined)
+    overrides.timeout = timeout;
+  const retries = commonProjectValue(config, 'retries');
+  if (retries !== undefined)
+    overrides.retries = retries;
+  const outputDir = commonProjectValue(config, 'outputDir');
+  if (outputDir !== undefined)
+    overrides.outputDir = outputDir;
+
+  Object.assign(config.configCLIOverrides, overrides);
+}
+
+function commonProjectValue<
+  T extends
+    | 'ignoreSnapshots'
+    | 'repeatEach'
+    | 'timeout'
+    | 'retries'
+    | 'outputDir',
+>(
+  config: FullConfigInternal,
+  property: T,
+): FullConfigInternal['projects'][number]['project'][T] | undefined {
+  const projects = config.projects;
+  if (!projects.length)
+    return undefined;
+  const first = projects[0].project[property];
+  return projects.every(project => project.project[property] === first)
+    ? first
+    : undefined;
 }

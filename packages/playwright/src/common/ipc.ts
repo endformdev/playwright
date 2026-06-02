@@ -18,9 +18,14 @@ import util from 'util';
 
 import { serializeCompilationCache } from '../transform/compilationCache';
 
+import type {
+  Config,
+  ReporterDescription,
+  TestInfoError,
+  TestStatus,
+} from '../../types/test';
+import type { SerializedCompilationCache } from '../transform/compilationCache';
 import type { ConfigLocation, FullConfigInternal } from './config';
-import type { ReporterDescription, TestInfoError, TestStatus } from '../../types/test';
-import type { SerializedCompilationCache  } from '../transform/compilationCache';
 
 export type ConfigCLIOverrides = {
   debug?: 'inspector' | 'cli';
@@ -35,19 +40,20 @@ export type ConfigCLIOverrides = {
   repeatEach?: number;
   retries?: number;
   reporter?: ReporterDescription[];
-  shard?: { current: number, total: number };
+  shard?: { current: number; total: number };
   timeout?: number;
   tsconfig?: string;
   ignoreSnapshots?: boolean;
   updateSnapshots?: 'all' | 'changed' | 'missing' | 'none';
   updateSourceMethod?: 'overwrite' | 'patch' | '3way';
   workers?: number | string;
-  projects?: { name: string, use?: any }[],
+  projects?: { name: string; use?: any }[];
   use?: any;
 };
 
 export type SerializedConfig = {
   location: ConfigLocation;
+  programmaticUserConfig?: Config;
   configCLIOverrides: ConfigCLIOverrides;
   compilationCache?: SerializedCompilationCache;
   metadata?: string;
@@ -72,7 +78,7 @@ export type WorkerInitParams = {
 
 export type TestBeginPayload = {
   testId: string;
-  startWallTime: number;  // milliseconds since unix epoch
+  startWallTime: number; // milliseconds since unix epoch
 };
 
 export type AttachmentPayload = {
@@ -116,7 +122,7 @@ export type TestEndPayload = {
   errors: TestInfoErrorPayload[];
   hasNonRetriableError: boolean;
   expectedStatus: TestStatus;
-  annotations: { type: string, description?: string }[];
+  annotations: { type: string; description?: string }[];
   timeout: number;
 };
 
@@ -126,17 +132,17 @@ export type StepBeginPayload = {
   parentStepId: string | undefined;
   title: string;
   category: string;
-  wallTime: number;  // milliseconds since unix epoch
-  location?: { file: string, line: number, column: number };
+  wallTime: number; // milliseconds since unix epoch
+  location?: { file: string; line: number; column: number };
 };
 
 export type StepEndPayload = {
   testId: string;
   stepId: string;
-  wallTime: number;  // milliseconds since unix epoch
+  wallTime: number; // milliseconds since unix epoch
   error?: TestInfoErrorPayload;
   suggestedRebaseline?: string;
-  annotations: { type: string, description?: string }[];
+  annotations: { type: string; description?: string }[];
 };
 
 export type TestEntry = {
@@ -151,7 +157,7 @@ export type RunPayload = {
 
 export type DonePayload = {
   fatalErrors: TestInfoErrorPayload[];
-  skipTestsDueToSetupFailure: string[];  // test ids
+  skipTestsDueToSetupFailure: string[]; // test ids
   fatalUnknownTestIds?: string[];
   stoppedDueToUnhandledErrorInTestFail?: boolean;
 };
@@ -167,11 +173,20 @@ export type TeardownErrorsPayload = {
 
 export type EnvProducedPayload = [string, string | null][];
 
-export function serializeConfig(config: FullConfigInternal, passCompilationCache: boolean): SerializedConfig {
+export function serializeConfig(
+  config: FullConfigInternal,
+  passCompilationCache: boolean,
+): SerializedConfig {
   const result: SerializedConfig = {
-    location: { configDir: config.configDir, resolvedConfigFile: config.config.configFile },
+    location: {
+      configDir: config.configDir,
+      resolvedConfigFile: config.config.configFile,
+    },
+    programmaticUserConfig: (config as any).__programmaticUserConfig,
     configCLIOverrides: config.configCLIOverrides,
-    compilationCache: passCompilationCache ? serializeCompilationCache() : undefined,
+    compilationCache: passCompilationCache
+      ? serializeCompilationCache()
+      : undefined,
   };
 
   try {
@@ -181,7 +196,9 @@ export function serializeConfig(config: FullConfigInternal, passCompilationCache
   return result;
 }
 
-export function stdioChunkToParams(chunk: Uint8Array | string): TestOutputPayload {
+export function stdioChunkToParams(
+  chunk: Uint8Array | string,
+): TestOutputPayload {
   if (chunk instanceof Uint8Array)
     return { buffer: Buffer.from(chunk).toString('base64') };
   if (typeof chunk !== 'string')
@@ -189,7 +206,9 @@ export function stdioChunkToParams(chunk: Uint8Array | string): TestOutputPayloa
   return { text: chunk };
 }
 
-export function toTestInfoErrorPayload(error: TestInfoError): TestInfoErrorPayload {
+export function toTestInfoErrorPayload(
+  error: TestInfoError,
+): TestInfoErrorPayload {
   const result: TestInfoErrorPayload = {};
   if (error.message !== undefined)
     result.message = error.message;
